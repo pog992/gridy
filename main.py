@@ -211,7 +211,6 @@ def grep_map(data):
     entry, text_fn = data
     text = text_fn()
     for i, line in enumerate(text.splitlines(), 1):
-        print line, regex, regex in line
         if regex in line:
             yield (entry.filename, '%d:%s' % (i, line))
 
@@ -359,10 +358,6 @@ class GrepPipeline(base_handler.PipelineBase):
         blobkey: blobkey to process as string. Should be a zip archive with
             text files inside.
     """
-    # def __init__(self, regex, *args, **kwargs):
-    #     super(GrepPipeline, self).__init__(*args, **kwargs)
-    #     self.regex = regex
-
 
     def run(self, regex, filekey, blobkey):
         output = yield mapreduce_pipeline.MapreducePipeline(
