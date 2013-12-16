@@ -30,5 +30,6 @@ function updateForm(filekey, blobkey, filename) {
   $('#word_count').removeAttr('disabled');
   $('#index').removeAttr('disabled');
   $('#phrases').removeAttr('disabled');
+  $('#grep').removeAttr('disabled');
 }
 

@@ -20,6 +20,7 @@
           <td>wordcount link</td>
           <td>index link</td>
           <td>phrases link</td>
+          <td>grep link</td>
         </tr>
         {% for item in items %}
         <tr>
@@ -41,6 +42,11 @@
           <td>
             {% if item.phrases_link %}
             <a href="{{ item.phrases_link }}">phrases</a>
+            {% endif %}
+          </td>
+          <td>
+            {% if item.grep_link %}
+            <a href="{{ item.grep_link }}">grep</a>
             {% endif %}
           </td>
         </tr>
@@ -76,9 +82,14 @@
         <br />
         <table>
           <tr>
-            <td><input type="submit" id="word_count" name="word_count" value="Word Count" disabled="true"></td>
-            <td><input type="submit" id="index" name="index" value="Index" disabled="true"></td>
-            <td><input type="submit" id="phrases" name="phrases" value="Phrases" disabled="true"></td>
+            <td>
+              <input type="submit" id="word_count" name="word_count" value="Word Count" disabled="true">
+              <input type="submit" id="index" name="index" value="Index" disabled="true">
+              <input type="submit" id="phrases" name="phrases" value="Phrases" disabled="true">
+            </td>
+          </tr>
+          <tr>
+            <td><form><input id="grep" type="submit" value="Grep" disabled="true"><input type="text" name="grep"></td>
           </tr>
         </table>
       </form>

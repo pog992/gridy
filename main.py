@@ -44,6 +44,7 @@ from google.appengine.api import taskqueue
 from google.appengine.api import users
 
 from mapreduce import base_handler
+from mapreduce import context
 from mapreduce import mapreduce_pipeline
 from mapreduce import operation as op
 from mapreduce import shuffler
@@ -74,6 +75,7 @@ class FileMetadata(db.Model):
     wordcount_link = db.StringProperty()
     index_link = db.StringProperty()
     phrases_link = db.StringProperty()
+    grep_link = db.StringProperty()
 
     @staticmethod
     def getFirstKeyForUser(username):
@@ -162,13 +164,16 @@ class IndexHandler(webapp2.RequestHandler):
     def post(self):
         filekey = self.request.get("filekey")
         blob_key = self.request.get("blobkey")
+        grep_regex = self.request.get("grep")
 
         if self.request.get("word_count"):
             pipeline = WordCountPipeline(filekey, blob_key)
         elif self.request.get("index"):
             pipeline = IndexPipeline(filekey, blob_key)
-        else:
+        elif self.request.get("phrases"):
             pipeline = PhrasesPipeline(filekey, blob_key)
+        else:
+            pipeline = GrepPipeline(grep_regex, filekey, blob_key)
 
         pipeline.start()
         self.redirect(pipeline.base_path + "/status?root=" + pipeline.pipeline_id)
@@ -197,6 +202,23 @@ def word_count_map(data):
     for s in split_into_sentences(text):
         for w in split_into_words(s.lower()):
             yield (w, "")
+
+
+def grep_map(data):
+    ctx = context.get()
+    params = ctx.mapreduce_spec.mapper.params
+    regex = params['regex']
+    entry, text_fn = data
+    text = text_fn()
+    for i, line in enumerate(text.splitlines(), 1):
+        print line, regex, regex in line
+        if regex in line:
+            yield (entry.filename, '%d:%s' % (i, line))
+
+
+def grep_reduce(key, values):
+    for iline in values:
+        yield "%s:%s\n" % (key, iline)
 
 
 def word_count_reduce(key, values):
@@ -330,6 +352,36 @@ class PhrasesPipeline(base_handler.PipelineBase):
         yield StoreOutput("Phrases", filekey, output)
 
 
+class GrepPipeline(base_handler.PipelineBase):
+    """A pipeline to run grep.
+
+    Args:
+        blobkey: blobkey to process as string. Should be a zip archive with
+            text files inside.
+    """
+    # def __init__(self, regex, *args, **kwargs):
+    #     super(GrepPipeline, self).__init__(*args, **kwargs)
+    #     self.regex = regex
+
+
+    def run(self, regex, filekey, blobkey):
+        output = yield mapreduce_pipeline.MapreducePipeline(
+                "grep",
+                "main.grep_map",
+                "main.grep_reduce",
+                "mapreduce.input_readers.BlobstoreZipInputReader",
+                "mapreduce.output_writers.BlobstoreOutputWriter",
+                mapper_params={
+                        "blob_key": blobkey,
+                        "regex": regex,
+                },
+                reducer_params={
+                        "mime_type": "text/plain",
+                },
+                shards=16)
+        yield StoreOutput("Grep", filekey, output)
+
+
 class StoreOutput(base_handler.PipelineBase):
     """A pipeline to store the result of the MapReduce job in the database.
 
@@ -350,6 +402,8 @@ class StoreOutput(base_handler.PipelineBase):
             m.index_link = output[0]
         elif mr_type == "Phrases":
             m.phrases_link = output[0]
+        elif mr_type == "Grep":
+            m.grep_link = output[0]
 
         m.put()
 
