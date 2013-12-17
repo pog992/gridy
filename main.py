@@ -1,32 +1,3 @@
-#!/usr/bin/env python
-#
-# Copyright 2011 Google Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-""" This is a sample application that tests the MapReduce API.
-
-It does so by allowing users to upload a zip file containing plaintext files
-and perform some kind of analysis upon it. Currently three types of MapReduce
-jobs can be run over user-supplied input data: a WordCount MR that reports the
-number of occurrences of each word, an Index MR that reports which file(s) each
-word in the input corpus comes from, and a Phrase MR that finds statistically
-improbably phrases for a given input file (this requires many input files in the
-zip file to attain higher accuracies)."""
-
-__author__ = """aizatsky@google.com (Mike Aizatsky), cbunch@google.com (Chris
-Bunch)"""
-
 import datetime
 import jinja2
 import logging
@@ -72,9 +43,6 @@ class FileMetadata(db.Model):
     uploadedOn = db.DateTimeProperty()
     source = db.StringProperty()
     blobkey = db.StringProperty()
-    wordcount_link = db.StringProperty()
-    index_link = db.StringProperty()
-    phrases_link = db.StringProperty()
     grep_link = db.StringProperty()
 
     @staticmethod
@@ -90,7 +58,6 @@ class FileMetadata(db.Model):
             own (although the value of this key is not able to be used for actual
             user data).
         """
-
         return db.Key.from_path("FileMetadata", username + FileMetadata.__SEP)
 
     @staticmethod
@@ -106,7 +73,6 @@ class FileMetadata(db.Model):
             own (although the value of this key is not able to be used for actual
             user data).
         """
-
         return db.Key.from_path("FileMetadata", username + FileMetadata.__NEXT)
 
     @staticmethod
@@ -125,7 +91,6 @@ class FileMetadata(db.Model):
         Returns:
             The internal key for the item specified by (username, date, blob_key).
         """
-
         sep = FileMetadata.__SEP
         return str(username + sep + str(date) + sep + blob_key)
 
@@ -166,42 +131,12 @@ class IndexHandler(webapp2.RequestHandler):
         blob_key = self.request.get("blobkey")
         grep_regex = self.request.get("grep")
 
-        if self.request.get("word_count"):
-            pipeline = WordCountPipeline(filekey, blob_key)
-        elif self.request.get("index"):
-            pipeline = IndexPipeline(filekey, blob_key)
-        elif self.request.get("phrases"):
-            pipeline = PhrasesPipeline(filekey, blob_key)
-        else:
+        if grep_regex:
             pipeline = GrepPipeline(grep_regex, filekey, blob_key)
-
-        pipeline.start()
-        self.redirect(pipeline.base_path + "/status?root=" + pipeline.pipeline_id)
-
-
-def split_into_sentences(s):
-    """Split text into list of sentences."""
-    s = re.sub(r"\s+", " ", s)
-    s = re.sub(r"[\\.\\?\\!]", "\n", s)
-    return s.split("\n")
-
-
-def split_into_words(s):
-    """Split a sentence into list of words."""
-    s = re.sub(r"\W+", " ", s)
-    s = re.sub(r"[_0-9]+", " ", s)
-    return s.split()
-
-
-def word_count_map(data):
-    """Word count map function."""
-    (entry, text_fn) = data
-    text = text_fn()
-
-    logging.debug("Got %s", entry.filename)
-    for s in split_into_sentences(text):
-        for w in split_into_words(s.lower()):
-            yield (w, "")
+            pipeline.start()
+            self.redirect(pipeline.base_path + "/status?root=" + pipeline.pipeline_id)
+        else:
+            return self.get()
 
 
 def grep_map(data):
@@ -218,137 +153,6 @@ def grep_map(data):
 def grep_reduce(key, values):
     for iline in values:
         yield "%s:%s\n" % (key, iline)
-
-
-def word_count_reduce(key, values):
-    """Word count reduce function."""
-    yield "%s: %d\n" % (key, len(values))
-
-
-def index_map(data):
-    """Index demo map function."""
-    (entry, text_fn) = data
-    text = text_fn()
-
-    logging.debug("Got %s", entry.filename)
-    for s in split_into_sentences(text):
-        for w in split_into_words(s.lower()):
-            yield (w, entry.filename)
-
-
-def index_reduce(key, values):
-    """Index demo reduce function."""
-    yield "%s: %s\n" % (key, list(set(values)))
-
-
-PHRASE_LENGTH = 4
-
-
-def phrases_map(data):
-    """Phrases demo map function."""
-    (entry, text_fn) = data
-    text = text_fn()
-    filename = entry.filename
-
-    logging.debug("Got %s", filename)
-    for s in split_into_sentences(text):
-        words = split_into_words(s.lower())
-        if len(words) < PHRASE_LENGTH:
-            yield (":".join(words), filename)
-            continue
-        for i in range(0, len(words) - PHRASE_LENGTH):
-            yield (":".join(words[i:i+PHRASE_LENGTH]), filename)
-
-
-def phrases_reduce(key, values):
-    """Phrases demo reduce function."""
-    if len(values) < 10:
-        return
-    counts = {}
-    for filename in values:
-        counts[filename] = counts.get(filename, 0) + 1
-
-    words = re.sub(r":", " ", key)
-    threshold = len(values) / 2
-    for filename, count in counts.items():
-        if count > threshold:
-            yield "%s:%s\n" % (words, filename)
-
-class WordCountPipeline(base_handler.PipelineBase):
-    """A pipeline to run Word count demo.
-
-    Args:
-        blobkey: blobkey to process as string. Should be a zip archive with
-            text files inside.
-    """
-
-    def run(self, filekey, blobkey):
-        logging.debug("filename is %s" % filekey)
-        output = yield mapreduce_pipeline.MapreducePipeline(
-                "word_count",
-                "main.word_count_map",
-                "main.word_count_reduce",
-                "mapreduce.input_readers.BlobstoreZipInputReader",
-                "mapreduce.output_writers.BlobstoreOutputWriter",
-                mapper_params={
-                        "blob_key": blobkey,
-                },
-                reducer_params={
-                        "mime_type": "text/plain",
-                },
-                shards=16)
-        yield StoreOutput("WordCount", filekey, output)
-
-
-class IndexPipeline(base_handler.PipelineBase):
-    """A pipeline to run Index demo.
-
-    Args:
-        blobkey: blobkey to process as string. Should be a zip archive with
-            text files inside.
-    """
-
-
-    def run(self, filekey, blobkey):
-        output = yield mapreduce_pipeline.MapreducePipeline(
-                "index",
-                "main.index_map",
-                "main.index_reduce",
-                "mapreduce.input_readers.BlobstoreZipInputReader",
-                "mapreduce.output_writers.BlobstoreOutputWriter",
-                mapper_params={
-                        "blob_key": blobkey,
-                },
-                reducer_params={
-                        "mime_type": "text/plain",
-                },
-                shards=16)
-        yield StoreOutput("Index", filekey, output)
-
-
-class PhrasesPipeline(base_handler.PipelineBase):
-    """A pipeline to run Phrases demo.
-
-    Args:
-        blobkey: blobkey to process as string. Should be a zip archive with
-            text files inside.
-    """
-
-    def run(self, filekey, blobkey):
-        output = yield mapreduce_pipeline.MapreducePipeline(
-                "phrases",
-                "main.phrases_map",
-                "main.phrases_reduce",
-                "mapreduce.input_readers.BlobstoreZipInputReader",
-                "mapreduce.output_writers.BlobstoreOutputWriter",
-                mapper_params={
-                        "blob_key": blobkey,
-                },
-                reducer_params={
-                        "mime_type": "text/plain",
-                },
-                shards=16)
-        yield StoreOutput("Phrases", filekey, output)
 
 
 class GrepPipeline(base_handler.PipelineBase):
@@ -374,7 +178,7 @@ class GrepPipeline(base_handler.PipelineBase):
                         "mime_type": "text/plain",
                 },
                 shards=16)
-        yield StoreOutput("Grep", filekey, output)
+        yield StoreOutput(filekey, output)
 
 
 class StoreOutput(base_handler.PipelineBase):
@@ -386,21 +190,13 @@ class StoreOutput(base_handler.PipelineBase):
         output: the blobstore location where the output of the job is stored
     """
 
-    def run(self, mr_type, encoded_key, output):
+    def run(self, encoded_key, output):
         logging.debug("output is %s" % str(output))
         key = db.Key(encoded=encoded_key)
         m = FileMetadata.get(key)
-
-        if mr_type == "WordCount":
-            m.wordcount_link = output[0]
-        elif mr_type == "Index":
-            m.index_link = output[0]
-        elif mr_type == "Phrases":
-            m.phrases_link = output[0]
-        elif mr_type == "Grep":
-            m.grep_link = output[0]
-
+        m.grep_link = output[0]
         m.put()
+
 
 class UploadHandler(blobstore_handlers.BlobstoreUploadHandler):
     """Handler to upload data to blobstore."""
