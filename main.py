@@ -145,8 +145,12 @@ def grep_map(data):
     regex = params['regex']
     entry, text_fn = data
     text = text_fn()
+    try:
+        pat = re.compile(regex)
+    except:
+        return
     for i, line in enumerate(text.splitlines(), 1):
-        if regex in line:
+        if pat.search(line):
             yield (entry.filename, '%d:%s' % (i, line))
 
 
