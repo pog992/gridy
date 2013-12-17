@@ -152,7 +152,7 @@ def grep_map(data):
     for i, line in enumerate(text.splitlines(), 1):
         formattedLine = formatLine(pat, line)
         if formattedLine:
-            yield (entry.filename, '%d:    %s<br/>' % (i, formattedLine))
+            yield ("<u>"+entry.filename+"</u>", '<u>%d</u>:    %s<br/><br/>' % (i, formattedLine))
 
 def formatLine(pattern, line):
     formattedLine = ""
