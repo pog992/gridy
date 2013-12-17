@@ -150,9 +150,26 @@ def grep_map(data):
     except:
         return
     for i, line in enumerate(text.splitlines(), 1):
-        if pat.search(line):
-            yield (entry.filename, '%d:%s' % (i, line))
+        formattedLine = formatLine(pat, line)
+        if formattedLine:
+            yield (entry.filename, '%d:    %s<br/>' % (i, formattedLine))
 
+def formatLine(pattern, line):
+    formattedLine = ""
+    prevStart = 0
+    found = False
+    while prevStart <= len(line):
+        result = pattern.search(line,prevStart)
+        if not result:
+            formattedLine += line[prevStart:]
+            break
+        found = True
+        start = result.start()
+        end = result.end()
+        formattedLine += line[prevStart:start]+"<b>"+line[start:end]+"</b>"
+        prevStart = end;
+    if found:
+        return formattedLine
 
 def grep_reduce(key, values):
     for iline in values:
@@ -198,7 +215,7 @@ class StoreOutput(base_handler.PipelineBase):
         logging.debug("output is %s" % str(output))
         key = db.Key(encoded=encoded_key)
         m = FileMetadata.get(key)
-        m.grep_link = output[0]
+        m.grep_link = output[0].replace("blobstore","blobstore_format")
         m.put()
 
 
@@ -238,11 +255,20 @@ class DownloadHandler(blobstore_handlers.BlobstoreDownloadHandler):
         blob_info = blobstore.BlobInfo.get(key)
         self.send_blob(blob_info)
 
+class FormatterHandler(blobstore_handlers.BlobstoreDownloadHandler):
+    """Handler to download blob by blobkey."""
+
+    def get(self, key):
+        key = str(urllib.unquote(key)).strip()
+        logging.debug("key is %s" % key)
+        blob_info = blobstore.BlobInfo.get(key)
+        self.send_blob(blob_info, "text/html")
 
 app = webapp2.WSGIApplication(
         [
                 ('/', IndexHandler),
                 ('/upload', UploadHandler),
                 (r'/blobstore/(.*)', DownloadHandler),
+                (r'/blobstore_format/(.*)', FormatterHandler),
         ],
         debug=True)
